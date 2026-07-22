@@ -1,18 +1,19 @@
-"""키스트로크 타이밍 → 특징 벡터.
+"""입력 타이밍 → 특징 벡터.
 
-계획서의 4대 특징을 산출한다:
+계획서의 4대 키보드 특징을 산출한다:
   1) dwell(키 누름 유지 시간)  2) flight(키 간격)과 분산
   3) 공백 비율(입력 없는 시간 비율)  4) 정정(백스페이스) 빈도
-추가로 리듬 불규칙성(cv)과 타이핑 속도(kpm)를 낸다 — 피로 시 리듬이 느려지고 불규칙해진다.
+추가로 리듬 불규칙성(cv), 타이핑 속도(kpm), 그리고 마우스 활동을 낸다.
 
-입력은 capture.KeyEvent 리스트라서 캡처 방식과 무관하게 단위 테스트가 가능하다.
+마우스는 "글 읽기(입력 전무) vs 마우스 작업(입력 있음)"을 PC 단에서 구분해주는 신호다.
+입력은 capture의 KeyEvent/MouseEvent 리스트라서 캡처 방식과 무관하게 단위 테스트가 가능하다.
 """
 from __future__ import annotations
 
 import statistics
 from dataclasses import asdict, dataclass, field
 
-from capture import KeyEvent, KeyKind
+from capture import KeyEvent, KeyKind, MouseEvent
 
 
 @dataclass
@@ -36,19 +37,26 @@ class Stat:
 class Features:
     node_id: str
     window_sec: float
-    typing_active: bool = False        # 이 윈도에서 타이핑이 있었나
+    # --- 통합 입력 ---
+    input_active: bool = False         # 키보드든 마우스든 뭐라도 입력 중
+    typing_active: bool = False        # 키보드 입력이 있었나
+    mouse_active: bool = False         # 마우스 입력이 있었나
+    # --- 키보드 ---
     keydown_count: int = 0
-    kpm: float = 0.0                    # keys per minute
+    kpm: float = 0.0                   # keys per minute
     dwell_ms: Stat = field(default_factory=Stat)
     flight_ms: Stat = field(default_factory=Stat)
     flight_cv: float = 0.0             # 리듬 불규칙성 = std/mean
     backspace_ratio: float = 0.0       # 백스페이스 / 전체 keydown
-    idle_ratio: float = 0.0            # 윈도 중 입력 없는 시간 비율
+    idle_ratio: float = 0.0            # 윈도 중 키 입력 없는 시간 비율
     pause_count: int = 0               # idle_gap 이상 멈춘 횟수
+    # --- 마우스 (활동량만, 좌표 없음) ---
+    mouse_event_rate: float = 0.0      # 분당 마우스 이벤트 수(이동 다운샘플됨)
+    mouse_click_rate: float = 0.0      # 분당 클릭 수
+    mouse_scroll_rate: float = 0.0     # 분당 스크롤 수
 
     def to_dict(self) -> dict:
-        d = asdict(self)
-        return d
+        return asdict(self)
 
 
 def extract(
@@ -56,6 +64,7 @@ def extract(
     node_id: str,
     window_sec: float,
     now_t: float,
+    mouse_events: list[MouseEvent] | None = None,
     flight_gap_max_sec: float = 2.0,
     idle_gap_sec: float = 3.0,
 ) -> Features:
@@ -65,13 +74,28 @@ def extract(
 
     f = Features(node_id=node_id, window_sec=round(window_sec, 2))
 
+    # ---------- 마우스 (키보드 유무와 무관하게 항상 계산) ----------
+    mevs = [e for e in (mouse_events or []) if start_t <= e.t <= now_t]
+    if mevs:
+        f.mouse_active = True
+        f.mouse_event_rate = round(len(mevs) / window_sec * 60.0, 1)
+        f.mouse_click_rate = round(
+            sum(1 for e in mevs if e.kind == "click") / window_sec * 60.0, 1
+        )
+        f.mouse_scroll_rate = round(
+            sum(1 for e in mevs if e.kind == "scroll") / window_sec * 60.0, 1
+        )
+
+    # ---------- 키보드 ----------
     downs = [e for e in evs if e.down]
     f.keydown_count = len(downs)
     if not downs:
         f.idle_ratio = 1.0
+        f.input_active = f.mouse_active     # 키보드는 없어도 마우스 작업 중일 수 있음
         return f
 
     f.typing_active = True
+    f.input_active = True
     f.kpm = round(len(downs) / window_sec * 60.0, 1)
 
     # --- 백스페이스 비율 ---
@@ -79,7 +103,6 @@ def extract(
     f.backspace_ratio = round(bs / len(downs), 4)
 
     # --- dwell: 같은 종류의 press→다음 release 매칭(근사) ---
-    # 물리 키 식별자는 프라이버시상 이벤트에 없으므로, kind별 FIFO로 press/release를 짝짓는다.
     dwell_ms: list[float] = []
     pending: dict[KeyKind, list[float]] = {}
     for e in evs:

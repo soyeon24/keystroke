@@ -9,7 +9,7 @@ from __future__ import annotations
 import signal
 import time
 
-from capture import KeystrokeCapture
+from capture import InputCapture
 from config import CONFIG
 from features import extract
 from publisher import FeaturePublisher
@@ -23,10 +23,10 @@ def main():
     print(f"  broker      : {cfg.broker_host}:{cfg.broker_port}")
     print(f"  topic       : {cfg.topic}")
     print(f"  window/period: {cfg.window_sec}s / {cfg.publish_period_sec}s")
-    print("  (키 값은 저장/전송하지 않음 — 타이밍과 종류만)")
+    print("  (키/마우스 내용은 저장/전송하지 않음 — 타이밍과 종류만)")
     print("=" * 60)
 
-    capture = KeystrokeCapture()
+    capture = InputCapture()
     publisher = FeaturePublisher(
         host=cfg.broker_host, port=cfg.broker_port, topic=cfg.topic,
         qos=cfg.qos, node_id=cfg.node_id, log_dir=cfg.log_dir,
@@ -46,12 +46,15 @@ def main():
         while running["on"]:
             time.sleep(cfg.publish_period_sec)
             now_t = time.monotonic()
-            events = capture.snapshot(since_t=now_t - cfg.window_sec)
+            since = now_t - cfg.window_sec
+            events = capture.snapshot(since_t=since)
+            mouse_events = capture.mouse_snapshot(since_t=since)
             feats = extract(
                 events,
                 node_id=cfg.node_id,
                 window_sec=cfg.window_sec,
                 now_t=now_t,
+                mouse_events=mouse_events,
                 flight_gap_max_sec=cfg.flight_gap_max_sec,
                 idle_gap_sec=cfg.idle_gap_sec,
             )

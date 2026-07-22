@@ -14,14 +14,27 @@
 - **단독 실행 가능**: 브로커가 없으면 콘솔+파일 로깅으로 폴백 → 노트북만으로 개발/검증.
 
 ## 산출 특징 (계획서 4대 특징 + α)
+키보드:
 | 필드 | 의미 |
 |---|---|
 | `dwell_ms` {mean,std} | 키 누름 유지 시간 |
 | `flight_ms` {mean,std} | 연속 키 간격 (멈춤 제외) |
 | `flight_cv` | 리듬 불규칙성 = std/mean (피로 지표) |
 | `backspace_ratio` | 정정(백스페이스) 빈도 |
-| `idle_ratio` | 입력 없는 시간 비율 (공백 비율) |
+| `idle_ratio` | 키 입력 없는 시간 비율 (공백 비율) |
 | `kpm`, `keydown_count`, `pause_count`, `typing_active` | 활동량/멈춤 |
+
+마우스(활동량만, 좌표·버튼·스크롤 내용 없음):
+| 필드 | 의미 |
+|---|---|
+| `mouse_active` | 마우스 입력이 있었나 |
+| `mouse_event_rate` | 분당 마우스 이벤트 수(이동은 다운샘플) |
+| `mouse_click_rate` / `mouse_scroll_rate` | 분당 클릭/스크롤 수 |
+
+통합:
+| 필드 | 의미 |
+|---|---|
+| `input_active` | 키보드든 마우스든 뭐라도 입력 중 → "마우스 작업 vs 글 읽기(입력 전무)" 구분 |
 
 ## 구조
 ```
@@ -60,13 +73,16 @@ python src/main.py
 ```json
 {
   "ts": 1690000000.123, "node_id": "pc-keystroke", "window_sec": 60.0,
-  "typing_active": true, "keydown_count": 210, "kpm": 210.0,
+  "input_active": true, "typing_active": true, "mouse_active": true,
+  "keydown_count": 210, "kpm": 210.0,
   "dwell_ms": {"mean": 92.1, "std": 20.4},
   "flight_ms": {"mean": 178.3, "std": 55.1}, "flight_cv": 0.309,
-  "backspace_ratio": 0.08, "idle_ratio": 0.12, "pause_count": 2
+  "backspace_ratio": 0.08, "idle_ratio": 0.12, "pause_count": 2,
+  "mouse_event_rate": 96.0, "mouse_click_rate": 12.0, "mouse_scroll_rate": 4.0
 }
 ```
 
 ## 주의
-- 전역 키 후킹은 백신/SmartScreen이 키로거로 의심할 수 있다 → 데모 PC에서 예외 처리.
+- 전역 키/마우스 후킹은 백신/SmartScreen이 키로거로 의심할 수 있다 → 데모 PC에서 예외 처리.
 - Windows에서는 `pynput`이 관리자 권한 없이 리스닝 가능.
+- 마우스는 좌표·클릭 버튼·스크롤 내용을 저장하지 않는다(활동량만). 키보드와 동일한 프라이버시 원칙.

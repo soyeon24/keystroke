@@ -4,8 +4,12 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from capture import KeyEvent, KeyKind  # noqa: E402
+from capture import KeyEvent, KeyKind, MouseEvent  # noqa: E402
 from features import extract  # noqa: E402
+
+
+def _mouse(start=0.0, n=10, step=0.2, kind="move"):
+    return [MouseEvent(start + i * step, kind) for i in range(n)]
 
 
 def _typing(start=0.0, n=20, flight=0.15, dwell=0.09, kind=KeyKind.CHAR):
@@ -63,6 +67,34 @@ def test_idle_ratio_and_pause():
     evs = _typing(55.0, 5, 0.15, 0.08)
     f = extract(evs, node_id="t", window_sec=60, now_t=60.0)
     assert f.idle_ratio > 0.8
+
+
+def test_reading_no_input_at_all():
+    # 글 읽기: 키보드도 마우스도 없음 → 전부 비활성
+    f = extract([], node_id="t", window_sec=60, now_t=100.0, mouse_events=[])
+    assert f.typing_active is False
+    assert f.mouse_active is False
+    assert f.input_active is False
+
+
+def test_mouse_work_without_typing():
+    # 마우스 작업: 키보드 없음, 마우스 활발 → input_active True, typing_active False
+    mevs = _mouse(start=41.0, n=30, step=0.5, kind="move")
+    mevs += [MouseEvent(42.0, "click"), MouseEvent(45.0, "click")]
+    f = extract([], node_id="t", window_sec=60, now_t=60.0, mouse_events=mevs)
+    assert f.typing_active is False
+    assert f.mouse_active is True
+    assert f.input_active is True
+    assert f.mouse_event_rate > 0
+    assert f.mouse_click_rate > 0
+
+
+def test_typing_sets_input_active_even_without_mouse():
+    evs = _typing(41.0, 20, 0.15, 0.08)
+    f = extract(evs, node_id="t", window_sec=60, now_t=60.0, mouse_events=[])
+    assert f.typing_active is True
+    assert f.input_active is True
+    assert f.mouse_active is False
 
 
 if __name__ == "__main__":
