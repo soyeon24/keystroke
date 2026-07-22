@@ -70,8 +70,13 @@ class InputCapture:
     # ---------- 키보드 ----------
     def _on_press(self, key):
         t = time.monotonic()
+        # auto-repeat(키 꾹 누름): 아직 release 안 된 키가 또 press로 들어오면
+        # OS가 만든 반복 이벤트다. 새 타건이 아니므로 무시한다 →
+        # keydown_count·flight를 가짜로 부풀리지 않고, '한 번의 긴 누름'으로만 본다.
+        if key in self._down_at:
+            return
+        self._down_at[key] = t
         kind = _classify(key)
-        self._down_at.setdefault(key, t)  # auto-repeat 연타는 첫 press만
         with self._lock:
             self._events.append(KeyEvent(t, kind, down=True))
 

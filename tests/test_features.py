@@ -4,7 +4,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from capture import KeyEvent, KeyKind, MouseEvent  # noqa: E402
+from capture import InputCapture, KeyEvent, KeyKind, MouseEvent  # noqa: E402
 from features import extract  # noqa: E402
 
 
@@ -95,6 +95,21 @@ def test_typing_sets_input_active_even_without_mouse():
     assert f.typing_active is True
     assert f.input_active is True
     assert f.mouse_active is False
+
+
+def test_autorepeat_hold_counts_as_one_keydown():
+    # 화살표 꾹 누름을 흉내: press 반복이 여러 번 들어와도 keydown은 1번만 기록되어야 함.
+    cap = InputCapture()
+    for _ in range(50):          # OS auto-repeat 50회
+        cap._on_press("arrow")   # release 전이므로 첫 1회만 유효
+    cap._on_release("arrow")
+    downs = [e for e in cap.snapshot() if e.down]
+    ups = [e for e in cap.snapshot() if not e.down]
+    assert len(downs) == 1       # 반복이 부풀리지 않음
+    assert len(ups) == 1
+    # 뗐다가 다시 누르면 새 타건으로 정상 카운트
+    cap._on_press("arrow")
+    assert len([e for e in cap.snapshot() if e.down]) == 2
 
 
 if __name__ == "__main__":
